@@ -5,57 +5,82 @@ import streamlit as st
 from PIL import Image
 from langchain_core.messages import HumanMessage
 
-# Adjust system path to ensure correct module resolution across directories
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# Define directory constants for robust cross-environment path resolution
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
+
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from app.camara.config import COLAB_VISION_URL
 from app.agent.graph import app_agent
 
-# Configure Streamlit page title and layout
-st.set_page_config(page_title="EcoPay 5G - Smart Bin Kiosk", layout="wide")
+# Configure Streamlit page parameters
+st.set_page_config(
+    page_title="EcoPay 5G - Smart Bin Kiosk",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 
 @st.cache_resource
 def load_local_vision_models():
     """
-    Loads two-stage YOLOv8 models into memory with caching.
-    Stage 1: Waste detection model (yolov8_best_smartdetection.pt)
-    Stage 2: Material classification model (yolov8_best.pt)
+    Loads two-stage YOLOv8 models into memory with resource caching.
+    
+    Stage 1: Detection model (yolov8_best_smartdetection.pt)
+    Stage 2: Classification model (yolov8_best.pt)
+    
+    Returns:
+        tuple: (model_detect, model_classify) if successfully loaded, otherwise (None, None).
     """
+    detect_path = os.path.join(PROJECT_ROOT, "models", "yolov8_best_smartdetection.pt")
+    classify_path = os.path.join(PROJECT_ROOT, "models", "yolov8_best.pt")
+
+    # Verify model weight files exist on disk
+    if not (os.path.exists(detect_path) and os.path.exists(classify_path)):
+        return None, None
+
     try:
         from ultralytics import YOLO
-
-        detect_path = os.path.join(PROJECT_ROOT, "models", "yolov8_best_smartdetection.pt")
-        classify_path = os.path.join(PROJECT_ROOT, "models", "yolov8_best.pt")
-
-        if os.path.exists(detect_path) and os.path.exists(classify_path):
-            model_detect = YOLO(detect_path)
-            model_classify = YOLO(classify_path)
-            return model_detect, model_classify
-    except Exception:
-        pass
-    return None, None
+        model_detect = YOLO(detect_path)
+        model_classify = YOLO(classify_path)
+        return model_detect, model_classify
+    except Exception as err:
+        st.warning(f"Failed to initialize local YOLO models: {str(err)}")
+        return None, None
 
 
 def process_vision_inference(img_file):
     """
-    Executes vision processing pipeline. Uses local two-stage YOLOv8 models if available;
-    otherwise falls back to remote API inference.
+    Executes the vision processing pipeline.
+    
+    Attempts local inference using YOLOv8 models first. If local models 
+    are unavailable, it falls back to a remote API endpoint defined by COLAB_VISION_URL.
+    
+    Args:
+        img_file: Streamlit UploadedFile object containing the deposit image.
+        
+    Returns:
+        dict: Standardized inference result payload.
     """
     model_detect, model_classify = load_local_vision_models()
 
-    # Pipeline Execution via Local Models
+    # Strategy 1: Local Inference Pipeline
     if model_detect is not None and model_classify is not None:
         image = Image.open(img_file)
 
-        # Stage 1: Waste Detection
+        # Stage 1: Object Detection
         res_detect = model_detect(image)
         if len(res_detect[0].boxes) == 0:
-            return {"status": "SUCCESS", "is_waste": False, "detected_class": None, "confidence": 0.0}
+            return {
+                "status": "SUCCESS",
+                "is_waste": False,
+                "detected_class": None,
+                "confidence": 0.0
+            }
 
-        # Crop detected region
+        # Crop detected target region
         box_coords = res_detect[0].boxes[0].xyxy[0].tolist()
         cropped_image = image.crop((box_coords[0], box_coords[1], box_coords[2], box_coords[3]))
 
@@ -73,15 +98,30 @@ def process_vision_inference(img_file):
                 "cropped_image": cropped_image
             }
 
-        return {"status": "CLASSIFICATION_FAILED", "is_waste": True, "detected_class": "UNKNOWN", "confidence": 0.0}
+        return {
+            "status": "CLASSIFICATION_FAILED",
+            "is_waste": True,
+            "detected_class": "UNKNOWN",
+            "confidence": 0.0
+        }
 
-    # Pipeline Execution via Remote Vision API Endpoint
+    # Strategy 2: Remote API Fallback
+    # Validate remote URL scheme to prevent 'Invalid URL' exceptions
+    if not COLAB_VISION_URL or not str(COLAB_VISION_URL).strip().startswith(("http://", "https://")):
+        raise ValueError(
+            "Local YOLO models could not be loaded from the 'models/' directory, "
+            "and COLAB_VISION_URL is not configured with a valid HTTP/HTTPS endpoint in secrets or environment variables."
+        )
+
     files = {"file": (img_file.name, img_file.getvalue(), img_file.type)}
     response = requests.post(COLAB_VISION_URL, files=files, timeout=20)
+    
     if response.status_code == 200:
         return response.json()
     else:
-        raise RuntimeError(f"Vision API endpoint returned status code {response.status_code}")
+        raise RuntimeError(
+            f"Remote Vision API returned HTTP error code {response.status_code}: {response.text}"
+        )
 
 
 # ---------------------------------------------------------
