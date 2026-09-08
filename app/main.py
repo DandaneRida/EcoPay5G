@@ -1,21 +1,37 @@
 import os
 import sys
+import subprocess
+
+# Runtime environment patch for headless cloud deployments (e.g., Streamlit Cloud)
+# Programmatically uninstalls 'opencv-python' to prevent libGL.so.1 missing shared object errors
+# and forces Ultralytics/OpenCV to rely exclusively on 'opencv-python-headless'.
+try:
+    subprocess.run(
+        [sys.executable, "-m", "pip", "uninstall", "-y", "opencv-python"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+except Exception:
+    pass
+
 import requests
 import streamlit as st
 from PIL import Image
 from langchain_core.messages import HumanMessage
 
-# Define directory constants for robust cross-environment path resolution
+# Resolve and set root directory paths across execution environments
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
 
+# Ensure project root is available in sys.path for local module imports
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from app.camara.config import COLAB_VISION_URL
 from app.agent.graph import app_agent
 
-# Configure Streamlit page parameters
+# Configure Streamlit application interface
 st.set_page_config(
     page_title="EcoPay 5G - Smart Bin Kiosk",
     layout="wide",
@@ -28,8 +44,8 @@ def load_local_vision_models():
     """
     Loads two-stage YOLOv8 models into memory with resource caching.
     
-    Stage 1: Detection model (yolov8_best_smartdetection.pt)
-    Stage 2: Classification model (yolov8_best.pt)
+    Stage 1: Object Detection model (yolov8_best_smartdetection.pt)
+    Stage 2: Material Classification model (yolov8_best.pt)
     
     Returns:
         tuple: (model_detect, model_classify) if successfully loaded, otherwise (None, None).
@@ -37,7 +53,7 @@ def load_local_vision_models():
     detect_path = os.path.join(PROJECT_ROOT, "models", "yolov8_best_smartdetection.pt")
     classify_path = os.path.join(PROJECT_ROOT, "models", "yolov8_best.pt")
 
-    # Verify model weight files exist on disk
+    # Check if local model weight files exist on disk
     if not (os.path.exists(detect_path) and os.path.exists(classify_path)):
         return None, None
 
@@ -53,7 +69,7 @@ def load_local_vision_models():
 
 def process_vision_inference(img_file):
     """
-    Executes the vision processing pipeline.
+    Executes the computer vision pipeline.
     
     Attempts local inference using YOLOv8 models first. If local models 
     are unavailable, it falls back to a remote API endpoint defined by COLAB_VISION_URL.
@@ -66,7 +82,7 @@ def process_vision_inference(img_file):
     """
     model_detect, model_classify = load_local_vision_models()
 
-    # Strategy 1: Local Inference Pipeline
+    # Strategy 1: Local YOLOv8 Inference Pipeline
     if model_detect is not None and model_classify is not None:
         image = Image.open(img_file)
 
@@ -80,7 +96,7 @@ def process_vision_inference(img_file):
                 "confidence": 0.0
             }
 
-        # Crop detected target region
+        # Crop detected object bounding box
         box_coords = res_detect[0].boxes[0].xyxy[0].tolist()
         cropped_image = image.crop((box_coords[0], box_coords[1], box_coords[2], box_coords[3]))
 
@@ -106,7 +122,6 @@ def process_vision_inference(img_file):
         }
 
     # Strategy 2: Remote API Fallback
-    # Validate remote URL scheme to prevent 'Invalid URL' exceptions
     if not COLAB_VISION_URL or not str(COLAB_VISION_URL).strip().startswith(("http://", "https://")):
         raise ValueError(
             "Local YOLO models could not be loaded from the 'models/' directory, "
@@ -140,7 +155,7 @@ with col1:
         accept_multiple_files=False
     )
     if img_file:
-        st.image(Image.open(img_file), caption="Captured Waste Frame", use_container_width=True)
+        st.image(Image.open(img_file), caption="Captured Waste Frame", width="stretch")
 
 with col2:
     st.subheader("2. Telemetry Input")
@@ -159,7 +174,7 @@ with col2:
         measured_weight = st.number_input("Scale Measurement", min_value=1.0, max_value=10.0, value=1.0, step=0.1)
         weight_in_grams = int(measured_weight * 1000)
 
-    btn_submit = st.button("Submit Deposit", type="primary", use_container_width=True)
+    btn_submit = st.button("Submit Deposit", type="primary", width="stretch")
 
 if img_file and btn_submit:
     st.markdown("---")
