@@ -1,0 +1,29 @@
+# Byte-compiled / Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Configuration and secret keys
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# IDEs and text editors
+.vscode/
+.idea/
+*.swp
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+tmp/
