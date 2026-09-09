@@ -7,15 +7,6 @@ from PIL import Image
 from langchain_core.messages import HumanMessage
 
 
-@st.cache_resource
-def force_headless_opencv():
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--no-cache-dir",
-         "--force-reinstall", "opencv-python-headless==4.8.0.76"],
-        check=False
-    )
-
-force_headless_opencv()
 
 
 # Resolve and set root directory paths across execution environments
