@@ -11,4 +11,5 @@ langgraph>=0.0.20
 Pillow>=10.0.0
 ultralytics>=8.0.0
 opencv-python-headless>=4.8.0.76
+gradio-client>=0.10.0
 pyngrok>=7.0.0

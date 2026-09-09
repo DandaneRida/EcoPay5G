@@ -1,26 +1,37 @@
 import os
 import sys
+import tempfile
 import subprocess
+
+# Runtime patch for headless cloud environments (e.g., Streamlit Cloud)
+# Programmatically uninstalls 'opencv-python' to force reliance on 'opencv-python-headless',
+# preventing missing libGL.so.1 shared library initialization errors.
+try:
+    subprocess.run(
+        [sys.executable, "-m", "pip", "uninstall", "-y", "opencv-python"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+except Exception:
+    pass
+
 import requests
 import streamlit as st
 from PIL import Image
 from langchain_core.messages import HumanMessage
 
-
-
-
-# Resolve and set root directory paths across execution environments
+# Resolve and inject project root directory into system path for cross-environment imports
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
 
-# Ensure project root is available in sys.path for local module imports
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from app.camara.config import COLAB_VISION_URL
 from app.agent.graph import app_agent
 
-# Configure Streamlit application interface
+# Configure Streamlit page parameters
 st.set_page_config(
     page_title="EcoPay 5G - Smart Bin Kiosk",
     layout="wide",
@@ -42,7 +53,7 @@ def load_local_vision_models():
     detect_path = os.path.join(PROJECT_ROOT, "models", "yolov8_best_smartdetection.pt")
     classify_path = os.path.join(PROJECT_ROOT, "models", "yolov8_best.pt")
 
-    # Check if local model weight files exist on disk
+    # Verify model weight files exist on local disk
     if not (os.path.exists(detect_path) and os.path.exists(classify_path)):
         return None, None
 
@@ -58,10 +69,10 @@ def load_local_vision_models():
 
 def process_vision_inference(img_file):
     """
-    Executes the computer vision pipeline.
+    Executes the computer vision processing pipeline.
     
-    Attempts local inference using YOLOv8 models first. If local models 
-    are unavailable, it falls back to a remote API endpoint defined by COLAB_VISION_URL.
+    Strategy 1: Attempts local inference using YOLOv8 models.
+    Strategy 2: Remote fallback querying Hugging Face ZeroGPU Space via gradio_client.
     
     Args:
         img_file: Streamlit UploadedFile object containing the deposit image.
@@ -110,22 +121,30 @@ def process_vision_inference(img_file):
             "confidence": 0.0
         }
 
-    # Strategy 2: Remote API Fallback
-    if not COLAB_VISION_URL or not str(COLAB_VISION_URL).strip().startswith(("http://", "https://")):
+    # Strategy 2: Remote Hugging Face Space Inference Fallback
+    space_target = str(COLAB_VISION_URL).strip() if COLAB_VISION_URL else ""
+    if not space_target:
         raise ValueError(
-            "Local YOLO models could not be loaded from the 'models/' directory, "
-            "and COLAB_VISION_URL is not configured with a valid HTTP/HTTPS endpoint in secrets or environment variables."
+            "Local YOLO models could not be loaded, and COLAB_VISION_URL is not configured "
+            "in Streamlit secrets or environment variables."
         )
 
-    files = {"file": (img_file.name, img_file.getvalue(), img_file.type)}
-    response = requests.post(COLAB_VISION_URL, files=files, timeout=20)
-    
-    if response.status_code == 200:
-        return response.json()
-    else:
-        raise RuntimeError(
-            f"Remote Vision API returned HTTP error code {response.status_code}: {response.text}"
+    # Persist input file buffer to a temporary file for gradio_client file handling
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
+        tmp_file.write(img_file.getvalue())
+        tmp_path = tmp_file.name
+
+    try:
+        from gradio_client import Client, handle_file
+        client = Client(space_target)
+        result = client.predict(
+            image=handle_file(tmp_path),
+            api_name="/predict"
         )
+        return result
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 # ---------------------------------------------------------
@@ -144,7 +163,7 @@ with col1:
         accept_multiple_files=False
     )
     if img_file:
-        st.image(Image.open(img_file), caption="Captured Waste Frame", width="stretch")
+        st.image(Image.open(img_file), caption="Captured Waste Frame", use_container_width=True)
 
 with col2:
     st.subheader("2. Telemetry Input")
@@ -163,7 +182,7 @@ with col2:
         measured_weight = st.number_input("Scale Measurement", min_value=1.0, max_value=10.0, value=1.0, step=0.1)
         weight_in_grams = int(measured_weight * 1000)
 
-    btn_submit = st.button("Submit Deposit", type="primary", width="stretch")
+    btn_submit = st.button("Submit Deposit", type="primary", use_container_width=True)
 
 if img_file and btn_submit:
     st.markdown("---")
