@@ -1,8 +1,14 @@
-
 # EcoPay5G — AI-Driven Smart Recycling Kiosk
 
 > **GSMA MENA Ignite Hackathon Prototype Simulation**  
-> EcoPay5G is an interactive prototype simulation developed for the GSMA MENA Ignite Hackathon. It demonstrates how 5G CAMARA Network APIs, computer vision, and autonomous AI agents can be integrated into smart city infrastructure to automate waste processing, prevent fraud, and reward sustainable habits.
+> EcoPay5G is an interactive prototype simulation developed for the GSMA MENA Ignite Hackathon[cite: 4]. It demonstrates how 5G CAMARA Network APIs, computer vision, and autonomous AI agents can be integrated into smart city infrastructure to automate waste processing, prevent fraud, and reward sustainable habits.
+
+---
+
+## Authors & Contributors
+
+* **Rida Dandane** — [EcoPay5G](https://github.com/DandaneRida)
+* **Youssef Es-Saaidi** — [YOLOv8 Waste Detection Model Repository](https://github.com/YoussefAIDT/waste-detection-yolov8)
 
 ---
 
@@ -10,7 +16,7 @@
 
 EcoPay5G automates the waste recycling workflow at automated kiosk stations. Using a two-stage YOLOv8 vision pipeline combined with an autonomous LangGraph agent, the platform identifies deposited recyclables, verifies subscriber identity over cellular networks, mitigates account takeover risks, and dynamically requests 5G quality-of-service boosts for heavy data telemetry.
 
-The prototype supports dual execution modes: running vision inference directly on the host machine using embedded model weights or offloading GPU computation to a **Google Colab** instance via an Ngrok bridge.
+The prototype supports dual execution modes: running vision inference directly on the host machine using embedded model weights or offloading computation asynchronously to a remote **Hugging Face ZeroGPU Space** via `gradio_client`.
 
 ---
 
@@ -43,12 +49,10 @@ EcoPay5G/
 │   │   ├── config.py
 │   │   └── __init__.py
 │   ├── main.py            # Streamlit main application and user interface
-│    └── simulator.py
+│   └── simulator.py
 ├── models/                # YOLOv8 weight files
 │   ├── yolov8_best_smartdetection.pt
 │   └── yolov8_best.pt
-├── notebooks/             # Google Colab execution scripts
-│   └── vision_server.ipynb
 ├── .env.example           # Environment variables template
 ├── .gitignore
 ├── README.md
@@ -68,7 +72,7 @@ EcoPay5G/
 ### 1. Repository Setup
 
 ```bash
-git clone [https://github.com/DandaneRida/EcoPay5G.git](https://github.com//EcoPay5G.git)
+git clone [https://github.com/DandaneRida/EcoPay5G.git](https://github.com/DandaneRida/EcoPay5G.git)
 cd EcoPay5G
 
 ```
@@ -96,8 +100,8 @@ NOKIA_QOD_URL=NOKIA_QUALITY_ON_DEMAND_URL
 # LLM Agent Gateway
 GROQ_API_KEY=your_groq_api_key
 
-# Optional Remote Vision API (When using Google Colab)
-COLAB_VISION_URL=[https://your-ngrok-tunnel-url.ngrok-free.app/predict]
+# Remote Vision API Identifier (Hugging Face Space)
+COLAB_VISION_URL=RidaDandane/ecopay5g-vision-api
 
 ```
 
@@ -116,15 +120,19 @@ streamlit run app/main.py
 
 ```
 
-### Option B: Remote GPU Acceleration via Google Colab (Optional)
+### Option B: Remote Acceleration via Hugging Face ZeroGPU Space
 
-If local hardware resources are limited, you can offload vision model inference to a cloud GPU:
+If local hardware resources or shared cloud container limits (such as Streamlit Cloud) prevent local YOLO execution, vision inference is automatically routed to the Hugging Face ZeroGPU Space:
 
-1. Open `notebooks/vision_server.ipynb` in **Google Colab**.
-2. Enable GPU acceleration (`Runtime > Change runtime type > T4 GPU`).
-3. Run all cells to initialize the FastAPI server and obtain a public **Ngrok tunnel URL**.
-4. Copy the generated Ngrok URL into your local `.env` file under `COLAB_VISION_URL`.
-5. Start the main Streamlit application locally:
+1. Ensure the vision backend is active on Hugging Face Spaces .
+2. Set the `COLAB_VISION_URL` variable in `.env` or Streamlit Cloud Secrets:
+```toml
+COLAB_VISION_URL = "YOUR_VISION_URL"
+
+```
+
+
+3. Start the main Streamlit application:
 ```bash
 streamlit run app/main.py
 
@@ -139,3 +147,4 @@ Access the interface in your web browser at `http://localhost:8501`.
 ## Hackathon Context & Acknowledgments
 
 This software is submitted as a prototype demonstration for the **GSMA MENA Ignite Hackathon 2026**. Special thanks to GSMA, Nokia Network-as-Code, and RapidAPI for providing network gateway access, technical support, and mentorship.
+
