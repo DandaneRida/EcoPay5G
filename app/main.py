@@ -1,20 +1,6 @@
 import os
 import sys
 import subprocess
-
-# Runtime environment patch for headless cloud deployments (e.g., Streamlit Cloud)
-# Programmatically uninstalls 'opencv-python' to prevent libGL.so.1 missing shared object errors
-# and forces Ultralytics/OpenCV to rely exclusively on 'opencv-python-headless'.
-try:
-    subprocess.run(
-        [sys.executable, "-m", "pip", "uninstall", "-y", "opencv-python"],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
-except Exception:
-    pass
-
 import requests
 import streamlit as st
 from PIL import Image
