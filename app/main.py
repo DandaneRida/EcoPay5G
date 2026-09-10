@@ -18,7 +18,7 @@ except Exception:
 
 import requests
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from langchain_core.messages import HumanMessage
 
 # Resolve and inject project root directory into system path for cross-environment imports
@@ -37,6 +37,38 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+
+def draw_bounding_box(image: Image.Image, box_coords: list, label: str, confidence: float) -> Image.Image:
+    """
+    Draws a bounding box rectangle and class label overlay onto a PIL Image copy.
+    Converts image to RGB mode first to prevent palette/256-color limit errors.
+    """
+    # Convert image to RGB mode to handle PNG/GIF palette-indexed images
+    annotated = image.convert("RGB")
+    draw = ImageDraw.Draw(annotated)
+    
+    xmin, ymin, xmax, ymax = box_coords
+    
+    # Bounding box color configuration (Bright Green)
+    outline_color = "#00FF00"
+    line_width = 4
+    
+    # Draw bounding box rectangle
+    draw.rectangle([xmin, ymin, xmax, ymax], outline=outline_color, width=line_width)
+    
+    # Render label text
+    text = f"{label.upper()} {confidence * 100:.1f}%"
+    try:
+        font = ImageFont.load_default()
+    except Exception:
+        font = None
+
+    # Draw label box overlay
+    text_pos = (xmin + 5, max(0, ymin - 15))
+    draw.text(text_pos, text, fill=outline_color, font=font)
+    
+    return annotated
 
 
 @st.cache_resource
@@ -93,10 +125,11 @@ def process_vision_inference(img_file):
                 "status": "SUCCESS",
                 "is_waste": False,
                 "detected_class": None,
-                "confidence": 0.0
+                "confidence": 0.0,
+                "box_coords": None
             }
 
-        # Crop detected object bounding box
+        # Extract bounding box coordinates
         box_coords = res_detect[0].boxes[0].xyxy[0].tolist()
         cropped_image = image.crop((box_coords[0], box_coords[1], box_coords[2], box_coords[3]))
 
@@ -111,6 +144,7 @@ def process_vision_inference(img_file):
                 "is_waste": True,
                 "detected_class": detected_class,
                 "confidence": confidence,
+                "box_coords": box_coords,
                 "cropped_image": cropped_image
             }
 
@@ -118,7 +152,8 @@ def process_vision_inference(img_file):
             "status": "CLASSIFICATION_FAILED",
             "is_waste": True,
             "detected_class": "UNKNOWN",
-            "confidence": 0.0
+            "confidence": 0.0,
+            "box_coords": box_coords
         }
 
     # Strategy 2: Remote Hugging Face Space Inference Fallback
@@ -195,9 +230,16 @@ if img_file and btn_submit:
             if data.get("status") == "SUCCESS" and data.get("is_waste"):
                 detected_class = data.get("detected_class", "unknown")
                 confidence = data.get("confidence", 0.0)
+                box_coords = data.get("box_coords")
+
                 st.success(f"Object Classified: {detected_class.upper()} (Confidence: {confidence * 100:.1f}%)")
 
-                if "cropped_image" in data:
+                # Render annotated image with bounding box
+                if box_coords:
+                    original_img = Image.open(img_file)
+                    annotated_img = draw_bounding_box(original_img, box_coords, detected_class, confidence)
+                    st.image(annotated_img, caption="Detected Waste Bounding Box Overlay", use_container_width=True)
+                elif "cropped_image" in data:
                     st.image(data["cropped_image"], caption="Cropped Object Region", width=200)
 
                 user_prompt = f"Process deposit: Phone={user_phone}, Waste={detected_class}, Weight={weight_in_grams}g"

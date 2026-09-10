@@ -48,8 +48,7 @@ EcoPay5G/
 │   │   ├── client.py
 │   │   ├── config.py
 │   │   └── __init__.py
-│   ├── main.py            # Streamlit main application and user interface
-│   └── simulator.py
+│   └── main.py            # Streamlit main application and user interface
 ├── models/                # YOLOv8 weight files
 │   ├── yolov8_best_smartdetection.pt
 │   └── yolov8_best.pt
@@ -127,7 +126,7 @@ If local hardware resources or shared cloud container limits (such as Streamlit 
 1. Ensure the vision backend is active on Hugging Face Spaces .
 2. Set the `COLAB_VISION_URL` variable in `.env` or Streamlit Cloud Secrets:
 ```toml
-COLAB_VISION_URL = "YOUR_VISION_URL"
+COLAB_VISION_URL = "YOUR_VISION_URL" or use COLAB_VISION_URL="RidaDandane/ecopay5g-vision-api"
 
 ```
 
