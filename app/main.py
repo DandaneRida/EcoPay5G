@@ -2,6 +2,9 @@ import os
 import sys
 import tempfile
 import subprocess
+import json
+import qrcode
+import io
 
 # Runtime patch for headless cloud environments (e.g., Streamlit Cloud)
 # Programmatically uninstalls 'opencv-python' to force reliance on 'opencv-python-headless',
@@ -38,7 +41,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-
 def draw_bounding_box(image: Image.Image, box_coords: list, label: str, confidence: float) -> Image.Image:
     """
     Draws a bounding box rectangle and class label overlay onto a PIL Image copy.
@@ -70,7 +72,6 @@ def draw_bounding_box(image: Image.Image, box_coords: list, label: str, confiden
     
     return annotated
 
-
 @st.cache_resource
 def load_local_vision_models():
     """
@@ -97,7 +98,6 @@ def load_local_vision_models():
     except Exception as err:
         st.warning(f"Failed to initialize local YOLO models: {str(err)}")
         return None, None
-
 
 def process_vision_inference(img_file):
     """
@@ -203,11 +203,8 @@ with col1:
 with col2:
     st.subheader("2. Telemetry Input")
 
-    user_phone = st.text_input(
-        "Enter Subscriber Phone Number",
-        value="+358400000001",
-        help="Format: International E.164 format (e.g., +358400000001)"
-    )
+    # Removed the phone number input field to ensure kiosk anonymity
+    # Users will claim their deposit using the generated QR code instead
 
     weight_unit = st.selectbox("Select Weight Unit", options=["g", "kg"])
     if weight_unit == "g":
@@ -228,11 +225,11 @@ if img_file and btn_submit:
             data = process_vision_inference(img_file)
 
             if data.get("status") == "SUCCESS" and data.get("is_waste"):
-                detected_class = data.get("detected_class", "unknown")
+                detected_class = data.get("detected_class", "unknown").upper()
                 confidence = data.get("confidence", 0.0)
                 box_coords = data.get("box_coords")
 
-                st.success(f"Object Classified: {detected_class.upper()} (Confidence: {confidence * 100:.1f}%)")
+                st.success(f"Object Classified: {detected_class} (Confidence: {confidence * 100:.1f}%)")
 
                 # Render annotated image with bounding box
                 if box_coords:
@@ -242,7 +239,10 @@ if img_file and btn_submit:
                 elif "cropped_image" in data:
                     st.image(data["cropped_image"], caption="Cropped Object Region", width=200)
 
-                user_prompt = f"Process deposit: Phone={user_phone}, Waste={detected_class}, Weight={weight_in_grams}g"
+                # Use a hardcoded generic kiosk identifier to satisfy backend tool schemas
+                # without requiring the user to manually type a number on the public interface
+                kiosk_phone = "+358400000001"
+                user_prompt = f"Process deposit: Phone={kiosk_phone}, Waste={detected_class}, Weight={weight_in_grams}g"
 
                 with st.spinner("Executing security verification and network logic..."):
                     inputs = {"messages": [HumanMessage(content=user_prompt)]}
@@ -257,6 +257,42 @@ if img_file and btn_submit:
                                         st.info(f"[SYSTEM] Invoking Tool: {tc['name']} | Parameters: {tc['args']}")
                                 if msg.content:
                                     st.markdown(msg.content)
+                                    
+                # ---------------------------------------------------------
+                # Step 4: Deposit Validation & QR Code Generation
+                # ---------------------------------------------------------
+                st.markdown("---")
+                st.subheader("4. Deposit Validation (Scan QR)")
+                
+                # Evaluation rates for calculating points based on material type
+                point_rates = {
+                    "PLASTIC": 0.10,
+                    "GLASS": 0.05,
+                    "PAPER": 0.08,
+                    "METAL": 0.15,
+                    "CARDBOARD": 0.07
+                }
+                
+                # Calculate final point allocation
+                rate = point_rates.get(detected_class, 0.05)
+                calculated_points = round(weight_in_grams * rate, 2)
+                
+                # Construct JSON payload for the Flutter mobile application
+                # Notice that user identity/phone is omitted for security
+                qr_payload = {
+                    "waste_class": detected_class,
+                    "weight_g": weight_in_grams,
+                    "points": calculated_points
+                }
+                
+                # Generate in-memory PNG representation of the QR code
+                qr_img = qrcode.make(json.dumps(qr_payload))
+                buf = io.BytesIO()
+                qr_img.save(buf, format="PNG")
+                
+                # Render the final QR code to the user interface
+                st.image(buf.getvalue(), caption="Scan with the EcoPay App to claim your points", width=250)
+
             else:
                 st.error("No valid recyclable waste detected in the frame.")
 
